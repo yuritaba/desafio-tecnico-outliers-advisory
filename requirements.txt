@@ -1,0 +1,35 @@
+# Core dependencies
+openai>=1.0.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# Audio processing
+pydub>=0.25.1
+librosa>=0.10.0
+ffmpeg-python>=0.2.0
+
+# Whisper options (choose one or both)
+openai-whisper>=20231117  # Local Whisper
+# whisperx>=3.1.1  # WhisperX with diarization (uncomment if using)
+
+# Diarization
+pyannote.audio>=3.0.0
+torch>=2.0.0
+
+# Utils
+tqdm>=4.65.0
+colorlog>=6.7.0
+click>=8.1.0
+
+# YouTube extraction
+yt-dlp>=2023.0.0
+
+# LangChain for RAG and LLMs
+langchain>=0.1.0
+langchain-openai>=0.0.5
+faiss-cpu>=1.7.4
+tiktoken>=0.5.0
+
+# Development
+pytest>=7.4.0
+black>=23.0.0
