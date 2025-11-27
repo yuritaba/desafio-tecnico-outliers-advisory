@@ -9,12 +9,16 @@ YouTube → Transcrição → Análise de Investimento → Marketing
 import json
 import logging
 import sys
+import warnings
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 import click
 from colorlog import ColoredFormatter
 from dotenv import load_dotenv
+
+# Suprimir avisos de deprecação do yt-dlp
+warnings.filterwarnings('ignore', message='.*Python version.*deprecated.*')
 
 # Carregar variáveis de ambiente (.env)
 load_dotenv()
@@ -242,12 +246,6 @@ def outliers(max_videos: Optional[int], tone: str) -> None:
     help='Tom do conteúdo de marketing (technical ou didactic).',
 )
 @click.option(
-    '--api-provider',
-    type=click.Choice(['openai', 'google']),
-    default='openai',
-    help='Provedor da API de transcrição (openai ou google).',
-)
-@click.option(
     '--skip-transcription',
     is_flag=True,
     help='Pular transcrição (usar JSONs existentes).',
@@ -272,37 +270,37 @@ def process_playlist_api(
     playlist_url: str,
     max_videos: Optional[int],
     tone: str,
-    api_provider: str,
     skip_transcription: bool,
     skip_analysis: bool,
     skip_marketing: bool,
     log_level: str,
 ) -> None:
     """
-    Processa uma playlist via API (SEM download local).
+    Processa uma playlist via Google Cloud Speech-to-Text (SEM download local).
 
-    Usa OpenAI Whisper API ou Google Cloud para transcrever diretamente
-    a partir das URLs do YouTube, sem salvar arquivos MP3 localmente.
+    Usa Google Cloud para transcrever diretamente a partir das URLs do YouTube,
+    sem salvar arquivos localmente. Inclui diarização para Samuel e Convidado.
 
     Exemplo:
-        python main.py process-playlist-api --max-videos 3 --api-provider openai
+        python main.py process-playlist-api --max-videos 3
     """
     logger = setup_logging(log_level)
     try:
-        click.echo(click.style("\n🚀 Processando Playlist via API (SEM download)", fg="cyan", bold=True))
+        click.echo(click.style("\n🚀 Processando Playlist via Google Cloud (SEM download)", fg="cyan", bold=True))
         
-        pipeline = MasterPipelineAPI(api_provider=api_provider)
+        pipeline = MasterPipelineAPI()
         results: Dict[str, Any] = pipeline.process_playlist(
             playlist_url=playlist_url,
             max_videos=max_videos,
             marketing_tone=tone,
+            language="pt-BR",
             skip_transcription=skip_transcription,
             skip_analysis=skip_analysis,
             skip_marketing=skip_marketing,
         )
 
         click.echo("\n" + "=" * 80)
-        click.echo(click.style("✓ PIPELINE CONCLUÍDO (VIA API)", fg="green", bold=True))
+        click.echo(click.style("✓ PIPELINE CONCLUÍDO (Google Cloud)", fg="green", bold=True))
         click.echo("=" * 80)
         click.echo(f"Transcrições: {len(results.get('transcriptions', []))}")
         click.echo(f"Análises:     {len(results.get('analyses', []))}")
@@ -340,29 +338,23 @@ def process_playlist_api(
     default='didactic',
     help='Tom do conteúdo de marketing.',
 )
-@click.option(
-    '--api-provider',
-    type=click.Choice(['openai', 'google']),
-    default='openai',
-    help='Provedor da API de transcrição.',
-)
-def outliers_api(max_videos: Optional[int], tone: str, api_provider: str) -> None:
+def outliers_api(max_videos: Optional[int], tone: str) -> None:
     """
-    Atalho para processar a playlist da Outliers via API (SEM download).
+    Atalho para processar a playlist da Outliers via Google Cloud Speech-to-Text.
+    SEM download local - usa diarização para identificar Samuel e Convidado.
 
     Exemplo:
-        python main.py outliers-api --max-videos 5 --api-provider openai
+        python main.py outliers-api --max-videos 5
     """
     logger = setup_logging()
     try:
-        click.echo(click.style("\n🚀 Processando Playlist da Outliers (VIA API)", fg="cyan", bold=True))
+        click.echo(click.style("\n🚀 Processando Playlist da Outliers (Google Cloud)", fg="cyan", bold=True))
         results = process_outliers_playlist_api(
             max_videos=max_videos,
-            marketing_tone=tone,
-            api_provider=api_provider,
+            marketing_tone=tone
         )
 
-        click.echo("\n" + click.style("✓ Completo (VIA API)!", fg="green", bold=True))
+        click.echo("\n" + click.style("✓ Completo (Google Cloud)!", fg="green", bold=True))
         click.echo(f"Transcrições: {len(results.get('transcriptions', []))}")
         click.echo(f"Análises:     {len(results.get('analyses', []))}")
         click.echo(f"Marketing:    {len(results.get('marketing', []))}")
@@ -619,7 +611,7 @@ def marketing_command(analysis_json: str, transcript_json: str, tone: str) -> No
         transcript = TranscriptOutput(**data)
 
         transcript_text = "\n".join(
-            f"{u.speaker_name or u.speaker_id}: {u.text}"
+            f"{u.speaker or u.speaker_raw_id or 'Unknown'}: {u.text}"
             for u in transcript.utterances
         )
 

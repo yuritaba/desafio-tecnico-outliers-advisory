@@ -50,6 +50,14 @@ class SpeakerIdentifier:
             Tupla (mapeamento speaker_raw_id -> role, lista de Participants)
         """
         self.logger.info("Identificando papéis dos speakers")
+        self.logger.info(f"📊 Recebidos {len(segments)} segmentos para análise")
+        
+        if segments:
+            first_seg = segments[0]
+            self.logger.info(
+                f"📊 Primeiro segmento: speaker={first_seg.speaker}, "
+                f"start={first_seg.start:.1f}s, text='{first_seg.text[:50]}...'"
+            )
         
         # Coleta estatísticas dos speakers
         speaker_stats = self._calculate_speaker_stats(segments)
@@ -249,48 +257,30 @@ class SpeakerIdentifier:
     ) -> Tuple[Dict[str, str], List[Participant]]:
         """
         Identificação específica para 2 speakers (caso mais comum).
+        
+        REGRA FUNDAMENTAL: O primeiro speaker a falar é SEMPRE o HOST (Samuel Ponsoni).
+        Isso ocorre porque após remover intro/propagandas, o apresentador sempre
+        inicia o podcast apresentando o programa e o convidado.
         """
         spk1, spk2 = speakers
         stats1 = speaker_stats[spk1]
         stats2 = speaker_stats[spk2]
         
-        # Scores para cada heurística
-        host_score = {spk1: 0, spk2: 0}
-        
-        # Heurística 1: Tempo de fala
-        # Em podcasts financeiros, host geralmente fala mais
-        if self.use_time_heuristic:
-            if stats1["total_time"] > stats2["total_time"]:
-                host_score[spk1] += 2
-            else:
-                host_score[spk2] += 2
-        
-        # Heurística 2: Perguntas
-        # Host geralmente faz mais perguntas
-        if self.use_question_heuristic:
-            if stats1["questions"] > stats2["questions"]:
-                host_score[spk1] += 1
-            elif stats2["questions"] > stats1["questions"]:
-                host_score[spk2] += 1
-        
-        # Heurística 3: Primeira aparição
-        # Host geralmente fala primeiro (introduz o programa)
+        # REGRA PRINCIPAL: Quem fala primeiro é o HOST
         if stats1["first_appearance"] < stats2["first_appearance"]:
-            host_score[spk1] += 1
+            host_id = spk1
+            guest_id = spk2
+            self.logger.info(
+                f"✓ Primeiro speaker ({spk1}) identificado como HOST (Samuel Ponsoni) "
+                f"- aparece em {stats1['first_appearance']:.1f}s"
+            )
         else:
-            host_score[spk2] += 1
-        
-        # Heurística 4: Padrão de alternância
-        # Analisa quem inicia mais trocas de fala
-        initiator_score = self._analyze_turn_taking(segments, [spk1, spk2])
-        if initiator_score[spk1] > initiator_score[spk2]:
-            host_score[spk1] += 1
-        else:
-            host_score[spk2] += 1
-        
-        # Decide baseado nos scores
-        host_id = spk1 if host_score[spk1] >= host_score[spk2] else spk2
-        guest_id = spk2 if host_id == spk1 else spk1
+            host_id = spk2
+            guest_id = spk1
+            self.logger.info(
+                f"✓ Primeiro speaker ({spk2}) identificado como HOST (Samuel Ponsoni) "
+                f"- aparece em {stats2['first_appearance']:.1f}s"
+            )
         
         role_mapping = {
             host_id: "HOST",
@@ -298,13 +288,19 @@ class SpeakerIdentifier:
         }
         
         participants = [
-            Participant(role="HOST", speaker_id=host_id),
-            Participant(role="GUEST_1", speaker_id=guest_id)
+            Participant(
+                role="HOST",
+                name="Samuel Ponsoni",  # Nome fixo do host
+                speaker_id=host_id
+            ),
+            Participant(
+                role="GUEST_1",
+                speaker_id=guest_id
+            )
         ]
         
         self.logger.info(
-            f"Identificados: HOST={host_id} (score={host_score[host_id]}), "
-            f"GUEST={guest_id} (score={host_score[guest_id]})"
+            f"Speakers identificados: HOST={host_id} (Samuel Ponsoni), GUEST={guest_id}"
         )
         
         return role_mapping, participants

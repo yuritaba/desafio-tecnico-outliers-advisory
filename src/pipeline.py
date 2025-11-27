@@ -19,6 +19,7 @@ from .diarizer import Diarizer, create_diarizer_from_config
 from .aligner import Aligner
 from .speaker_identifier import SpeakerIdentifier
 from .text_cleaner import TextCleaner
+from .podcast_start_detector import PodcastStartDetector
 from .utils import (
     setup_logging,
     get_audio_duration,
@@ -60,6 +61,7 @@ class PodcastPipeline:
         self.aligner = Aligner(**(aligner_config or {}))
         self.cleaner = TextCleaner(**(cleaner_config or {}))
         self.speaker_identifier = SpeakerIdentifier()
+        self.podcast_start_detector = PodcastStartDetector()
         
         self.logger.info("Pipeline inicializado com sucesso")
     
@@ -92,7 +94,7 @@ class PodcastPipeline:
             raise ValueError(f"Arquivo de áudio inválido: {audio_path}")
         
         # Cria tracker de progresso
-        progress = ProgressTracker(7, "Processamento do episódio")
+        progress = ProgressTracker(8, "Processamento do episódio")
         
         # Cria estrutura de output
         output = TranscriptOutput(
@@ -134,6 +136,34 @@ class PodcastPipeline:
                     "alignment"
                 )
             
+            # Passo 3.5: Detectar início real do podcast (remover intros/propagandas)
+            progress.update("Detectando início do podcast")
+            original_segment_count = len(aligned)
+            aligned = self.podcast_start_detector.detect_podcast_start(aligned, blocks_to_check=10)
+            
+            removed_duration = self.podcast_start_detector.get_removed_duration(
+                transcription,
+                aligned
+            )
+            
+            if len(aligned) < original_segment_count:
+                removed_segments = original_segment_count - len(aligned)
+                output.add_note(
+                    "INFO",
+                    f"Removidos {removed_segments} segmentos introdutórios "
+                    f"({removed_duration:.1f}s de conteúdo pré-podcast)",
+                    "podcast_start_detection"
+                )
+                self.logger.info(
+                    f"✂ Cortados {removed_duration:.1f}s de conteúdo introdutório"
+                )
+            else:
+                output.add_note(
+                    "INFO",
+                    "Podcast já inicia no primeiro segmento",
+                    "podcast_start_detection"
+                )
+            
             # Passo 4: Identificação de speakers
             progress.update("Identificando papéis (HOST/GUEST)")
             self.speaker_identifier.host_name = host_name
@@ -173,7 +203,7 @@ class PodcastPipeline:
             progress.update("Finalizando estrutura de dados")
             output.utterances = self._convert_to_utterances(cleaned)
             
-            # Finaliza
+            # Passo 8: Finaliza
             progress.complete()
             
             # Adiciona estatísticas finais

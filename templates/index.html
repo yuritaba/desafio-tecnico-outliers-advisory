@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case Técnico Outliers Advisory</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h1>Case Técnico</h1>
+                <p>Outliers Advisory</p>
+            </div>
+            
+            <nav class="nav-menu">
+                <button class="nav-item active" data-section="chat">
+                    <span class="icon"></span>
+                    <span>Chatbot RAG</span>
+                </button>
+                <button class="nav-item" data-section="analyses">
+                    <span class="icon"></span>
+                    <span>Análises</span>
+                </button>
+                <button class="nav-item" data-section="marketing">
+                    <span class="icon"></span>
+                    <span>Marketing</span>
+                </button>
+                <button class="nav-item" data-section="transcripts">
+                    <span class="icon"></span>
+                    <span>Transcrições</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <p>Second Level Podcast</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Chat Section -->
+            <section id="chat-section" class="content-section active">
+                <div class="section-header">
+                    <h2>Assistente Inteligente</h2>
+                    <p>Faça perguntas sobre investimentos e marketing baseadas nos episódios do Second Level</p>
+                    <button id="clear-chat" class="btn-secondary">Limpar Conversa</button>
+                </div>
+                
+                <div class="chat-container">
+                    <div id="chat-messages" class="chat-messages">
+                        <div class="message bot">
+                            <div class="message-bubble">
+                                <p>Olá! Sou o assistente da Outliers Advisory. Posso te ajudar com:</p>
+                                <ul>
+                                    <li>Análises de investimento dos episódios</li>
+                                    <li>Criação de posts de marketing</li>
+                                    <li>Insights e citações dos convidados</li>
+                                    <li>Busca em todo o conteúdo do Second Level</li>
+                                </ul>
+                                <p>Como posso te ajudar hoje?</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <textarea 
+                            id="chat-input" 
+                            placeholder="Digite sua pergunta..." 
+                            rows="1"
+                        ></textarea>
+                        <button id="send-btn" class="btn-primary">
+                            <span>Enviar</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analyses Section -->
+            <section id="analyses-section" class="content-section">
+                <div class="section-header">
+                    <h2>Análises de Investimento</h2>
+                    <p>Análises profundas extraídas dos episódios</p>
+                </div>
+                
+                <div id="analyses-list" class="card-grid">
+                    <p class="loading">Carregando análises...</p>
+                </div>
+                
+                <div id="analysis-detail" class="detail-view" style="display: none;">
+                    <button class="btn-back" onclick="backToAnalyses()">← Voltar</button>
+                    <h2 id="analysis-title"></h2>
+                    <div id="analysis-content"></div>
+                </div>
+            </section>
+
+            <!-- Marketing Section -->
+            <section id="marketing-section" class="content-section">
+                <div class="section-header">
+                    <h2>Materiais de Marketing</h2>
+                    <p>Posts, carrosséis e citações prontas</p>
+                </div>
+                
+                <div id="marketing-list" class="card-grid">
+                    <p class="loading">Carregando materiais...</p>
+                </div>
+                
+                <div id="marketing-detail" class="detail-view" style="display: none;">
+                    <button class="btn-back" onclick="backToMarketing()">← Voltar</button>
+                    <h2 id="marketing-title"></h2>
+                    <div id="marketing-content"></div>
+                </div>
+            </section>
+
+            <!-- Transcripts Section -->
+            <section id="transcripts-section" class="content-section">
+                <div class="section-header">
+                    <h2>Transcrições</h2>
+                    <p>Transcrições completas dos episódios</p>
+                </div>
+                
+                <div id="transcripts-list" class="card-grid">
+                    <p class="loading">Carregando transcrições...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

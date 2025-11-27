@@ -25,9 +25,9 @@ class Participant(BaseModel):
 
 class Utterance(BaseModel):
     """Representa uma fala individual no episódio"""
-    speaker_role: Literal["HOST", "GUEST_1", "GUEST_2", "UNKNOWN"] = Field(
+    speaker: str = Field(
         ...,
-        description="Papel de quem está falando"
+        description="Nome completo de quem está falando (ex: 'Samuel Ponsoni', 'João Silva')"
     )
     speaker_raw_id: Optional[str] = Field(
         None,

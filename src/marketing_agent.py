@@ -386,7 +386,7 @@ def generate_marketing_from_analysis(
     
     # Preparar texto
     transcript_text = "\n".join([
-        f"{u.speaker_name or u.speaker_id}: {u.text}"
+        f"{u.speaker or u.speaker_raw_id or 'Unknown'}: {u.text}"
         for u in transcript.utterances
     ])
     

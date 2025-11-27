@@ -1,22 +1,29 @@
 """
 Agente de Inteligência e Análise de Investimentos.
 Extrai teses de investimento usando RAG e LLMs com LangChain.
+Integração com Pinecone para armazenamento vetorial persistente.
 """
+import os
 import logging
+import time
 from typing import Dict, Any, List, Optional
 from pathlib import Path
+from datetime import datetime
 
 try:
     from langchain_openai import ChatOpenAI, OpenAIEmbeddings
     from langchain.text_splitter import RecursiveCharacterTextSplitter
     from langchain_community.vectorstores import FAISS
+    from langchain_pinecone import PineconeVectorStore
     from langchain.chains import RetrievalQA
     from langchain.prompts import PromptTemplate
     from langchain.docstore.document import Document
+    from pinecone import Pinecone, ServerlessSpec
 except ImportError:
     raise ImportError(
         "LangChain não instalado. Execute: "
-        "pip install langchain langchain-openai langchain-community faiss-cpu tiktoken"
+        "pip install langchain langchain-openai langchain-community langchain-pinecone "
+        "pinecone-client faiss-cpu tiktoken"
     )
 
 from .models import TranscriptOutput
@@ -76,7 +83,10 @@ Sumário Executivo:"""
         model_name: str = "gpt-4",
         temperature: float = 0.3,
         chunk_size: int = 2000,
-        chunk_overlap: int = 200
+        chunk_overlap: int = 200,
+        use_pinecone: bool = True,
+        pinecone_api_key: Optional[str] = None,
+        pinecone_index_name: Optional[str] = None
     ):
         """
         Inicializa o agente de análise.
@@ -87,6 +97,9 @@ Sumário Executivo:"""
             temperature: Temperatura para geração
             chunk_size: Tamanho dos chunks para RAG
             chunk_overlap: Overlap entre chunks
+            use_pinecone: Se True, usa Pinecone para armazenamento persistente
+            pinecone_api_key: Chave da API Pinecone (se None, busca em .env)
+            pinecone_index_name: Nome do índice Pinecone (se None, busca em .env)
         """
         self.logger = logging.getLogger('podcast_pipeline.investment')
         
@@ -104,6 +117,95 @@ Sumário Executivo:"""
             separators=["\n\n", "\n", ". ", " ", ""]
         )
         
+        # Configurar Pinecone
+        self.use_pinecone = use_pinecone
+        self.pinecone_client = None
+        self.pinecone_index_name = pinecone_index_name or os.getenv("PINECONE_INDEX_NAME")
+        
+        if self.use_pinecone:
+            try:
+                # Inicializar cliente Pinecone
+                api_key = pinecone_api_key or os.getenv("PINECONE_API_KEY")
+                if not api_key:
+                    self.logger.warning("⚠️ PINECONE_API_KEY não encontrada, usando apenas FAISS temporário")
+                    self.use_pinecone = False
+                else:
+                    self.pinecone_client = Pinecone(api_key=api_key)
+                    
+                    # Verificar se índice existe
+                    existing_indexes = [idx.name for idx in self.pinecone_client.list_indexes()]
+                    
+                    if self.pinecone_index_name not in existing_indexes:
+                        self.logger.info(f"📝 Criando índice Pinecone: {self.pinecone_index_name}")
+                        self.pinecone_client.create_index(
+                            name=self.pinecone_index_name,
+                            dimension=1536,  # OpenAI text-embedding-ada-002
+                            metric="cosine",
+                            spec=ServerlessSpec(
+                                cloud="aws",
+                                region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
+                            )
+                        )
+                        # Aguardar índice estar pronto
+                        time.sleep(5)
+                    
+                    self.logger.info(f"✓ Pinecone conectado: {self.pinecone_index_name}")
+                    
+            except Exception as e:
+                self.logger.error(f"✗ Erro ao conectar Pinecone: {e}")
+                self.logger.warning("⚠️ Continuando apenas com FAISS temporário")
+                self.use_pinecone = False
+    
+    def _create_documents_with_rich_metadata(
+        self,
+        transcript: TranscriptOutput
+    ) -> List[Document]:
+        """
+        Cria documentos com metadados ricos para cada utterance.
+        Resolve o problema de speakers em chunks mistos.
+        
+        Estratégia:
+        1. Cada utterance vira um documento (não chunk arbitrário)
+        2. Metadados: speaker, start, end, episode_id, title
+        3. Texto inclui speaker no início para contexto
+        
+        Args:
+            transcript: Transcrição completa
+            
+        Returns:
+            Lista de Documents com metadados ricos
+        """
+        documents = []
+        episode_id = transcript.episode_metadata.episode_id
+        title = transcript.episode_metadata.title
+        
+        for utt in transcript.utterances:
+            # Texto com speaker embutido (para busca semântica)
+            text_with_speaker = f"{utt.speaker}: {utt.text}"
+            
+            # Metadados ricos
+            metadata = {
+                "episode_id": episode_id,
+                "episode_title": title,
+                "speaker": utt.speaker or "Unknown",
+                "speaker_raw_id": utt.speaker_raw_id or "unknown",
+                "start_time": utt.start_time,
+                "end_time": utt.end_time,
+                "duration": utt.end_time - utt.start_time,
+                "text_length": len(utt.text),
+                "timestamp": datetime.now().isoformat(),
+                "source": "utterance"  # Indica que é utterance completa, não chunk
+            }
+            
+            doc = Document(
+                page_content=text_with_speaker,
+                metadata=metadata
+            )
+            documents.append(doc)
+        
+        self.logger.info(f"📄 Criados {len(documents)} documentos com metadados (1 por utterance)")
+        return documents
+        
     def analyze_transcript(
         self,
         transcript: TranscriptOutput,
@@ -119,7 +221,7 @@ Sumário Executivo:"""
         Returns:
             Dict com análise estruturada
         """
-        self.logger.info(f"Analisando: {transcript.metadata.title}")
+        self.logger.info(f"Analisando: {transcript.episode_metadata.title}")
         
         # Preparar contexto
         full_text = self._prepare_transcript_text(transcript)
@@ -132,12 +234,12 @@ Sumário Executivo:"""
             analysis = self._analyze_direct(transcript, full_text)
         
         return {
-            'episode_id': transcript.metadata.episode_id,
-            'title': transcript.metadata.title,
-            'duration_seconds': transcript.metadata.duration_seconds,
+            'episode_id': transcript.episode_metadata.episode_id,
+            'title': transcript.episode_metadata.title,
+            'duration_seconds': transcript.episode_metadata.duration_seconds,
             'participants': [
                 {'role': p.role, 'name': p.name}
-                for p in transcript.participants
+                for p in transcript.episode_metadata.participants
             ],
             'analysis': analysis,
             'metadata': {
@@ -151,7 +253,7 @@ Sumário Executivo:"""
         """Prepara texto da transcrição para análise."""
         lines = []
         for utterance in transcript.utterances:
-            speaker_name = utterance.speaker_name or utterance.speaker_id
+            speaker_name = utterance.speaker or utterance.speaker_raw_id or "Unknown"
             lines.append(f"{speaker_name}: {utterance.text}")
         return "\n".join(lines)
     
@@ -163,44 +265,79 @@ Sumário Executivo:"""
         """Analisa usando RAG (para transcrições longas)."""
         self.logger.info("Usando RAG para análise contextual")
         
-        # Criar documentos
-        docs = [
-            Document(
-                page_content=chunk,
-                metadata={'source': transcript.metadata.episode_id}
-            )
-            for chunk in self.text_splitter.split_text(full_text)
-        ]
+        episode_id = transcript.episode_metadata.episode_id
         
-        # Criar vector store
-        vectorstore = FAISS.from_documents(docs, self.embeddings)
+        # 1. Criar documentos com metadados ricos (1 por utterance)
+        rich_docs = self._create_documents_with_rich_metadata(transcript)
         
-        # Criar chain de QA
-        prompt = PromptTemplate(
-            template=self.ANALYSIS_PROMPT,
-            input_variables=["context", "title", "participants", "duration"]
-        )
+        # 2. Armazenar no Pinecone (persistente) se habilitado
+        pinecone_vectorstore = None
+        if self.use_pinecone and self.pinecone_client:
+            try:
+                self.logger.info("💾 Armazenando embeddings no Pinecone...")
+                
+                # Criar namespace único por episódio
+                namespace = f"episode_{episode_id}"
+                
+                # Criar vector store Pinecone
+                pinecone_vectorstore = PineconeVectorStore.from_documents(
+                    documents=rich_docs,
+                    embedding=self.embeddings,
+                    index_name=self.pinecone_index_name,
+                    namespace=namespace
+                )
+                
+                self.logger.info(f"✓ {len(rich_docs)} utterances salvas no Pinecone (namespace: {namespace})")
+                
+            except Exception as e:
+                self.logger.error(f"✗ Erro ao salvar no Pinecone: {e}")
+                self.logger.warning("⚠️ Continuando com FAISS temporário")
         
-        qa_chain = RetrievalQA.from_chain_type(
-            llm=self.llm,
-            chain_type="stuff",
-            retriever=vectorstore.as_retriever(search_kwargs={"k": 5}),
-            chain_type_kwargs={"prompt": prompt}
+        # 3. SEMPRE criar FAISS temporário para busca rápida
+        self.logger.info("🔍 Criando índice FAISS temporário...")
+        faiss_vectorstore = FAISS.from_documents(rich_docs, self.embeddings)
+        
+        # 4. Buscar documentos relevantes (usa FAISS ou Pinecone)
+        vectorstore = pinecone_vectorstore if pinecone_vectorstore else faiss_vectorstore
+        
+        # Executar análise usando o retriever
+        participants_str = ", ".join([
+            f"{p.name} ({p.role})" for p in transcript.episode_metadata.participants
+        ])
+        
+        # Buscar utterances relevantes (não chunks arbitrários!)
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 10})  # Top 10 utterances
+        relevant_docs = retriever.invoke("tese de investimento ativos setores riscos oportunidades")
+        
+        # Combinar contexto dos documentos com metadados
+        context_parts = []
+        for doc in relevant_docs:
+            speaker = doc.metadata.get("speaker", "Unknown")
+            text = doc.page_content
+            # Já inclui speaker no text, mas garantir formato
+            if not text.startswith(f"{speaker}:"):
+                text = f"{speaker}: {text}"
+            context_parts.append(text)
+        
+        context = "\n\n".join(context_parts)
+        
+        self.logger.info(f"📊 Usando {len(relevant_docs)} utterances relevantes para análise")
+        
+        # Criar prompt com variáveis preenchidas
+        prompt_text = self.ANALYSIS_PROMPT.format(
+            title=transcript.episode_metadata.title,
+            participants=participants_str,
+            duration=transcript.episode_metadata.duration_seconds,
+            context=context
         )
         
         # Executar análise
-        participants_str = ", ".join([
-            f"{p.name} ({p.role})" for p in transcript.participants
-        ])
+        result = self.llm.invoke(prompt_text)
         
-        result = qa_chain.run({
-            "title": transcript.metadata.title,
-            "participants": participants_str,
-            "duration": transcript.metadata.duration_seconds,
-            "context": full_text[:10000]  # Limitar contexto inicial
-        })
-        
-        return result
+        # Extrair texto da resposta
+        if hasattr(result, 'content'):
+            return result.content
+        return str(result)
     
     def _analyze_direct(
         self,
@@ -211,18 +348,99 @@ Sumário Executivo:"""
         self.logger.info("Análise direta (sem RAG)")
         
         participants_str = ", ".join([
-            f"{p.name} ({p.role})" for p in transcript.participants
+            f"{p.name} ({p.role})" for p in transcript.episode_metadata.participants
         ])
         
         prompt = self.ANALYSIS_PROMPT.format(
-            title=transcript.metadata.title,
+            title=transcript.episode_metadata.title,
             participants=participants_str,
-            duration=transcript.metadata.duration_seconds,
+            duration=transcript.episode_metadata.duration_seconds,
             context=full_text[:12000]  # Limitar para não estourar tokens
         )
         
         result = self.llm.predict(prompt)
         return result
+    
+    def query_episode_in_pinecone(
+        self,
+        episode_id: str,
+        query: str,
+        k: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Consulta utterances de um episódio específico no Pinecone.
+        
+        Args:
+            episode_id: ID do episódio
+            query: Query de busca
+            k: Número de resultados
+            
+        Returns:
+            Lista de dicts com utterances e metadados
+        """
+        if not self.use_pinecone or not self.pinecone_client:
+            self.logger.warning("⚠️ Pinecone não está habilitado")
+            return []
+        
+        try:
+            namespace = f"episode_{episode_id}"
+            
+            # Conectar ao vector store existente
+            vectorstore = PineconeVectorStore(
+                index_name=self.pinecone_index_name,
+                embedding=self.embeddings,
+                namespace=namespace
+            )
+            
+            # Buscar similaridade
+            results = vectorstore.similarity_search_with_score(query, k=k)
+            
+            # Formatar resultados
+            formatted_results = []
+            for doc, score in results:
+                formatted_results.append({
+                    "text": doc.page_content,
+                    "score": float(score),
+                    "metadata": doc.metadata
+                })
+            
+            return formatted_results
+            
+        except Exception as e:
+            self.logger.error(f"✗ Erro ao consultar Pinecone: {e}")
+            return []
+    
+    def get_episode_stats_from_pinecone(self, episode_id: str) -> Dict[str, Any]:
+        """
+        Obtém estatísticas de um episódio no Pinecone.
+        
+        Args:
+            episode_id: ID do episódio
+            
+        Returns:
+            Dict com estatísticas (total utterances, speakers, etc.)
+        """
+        if not self.use_pinecone or not self.pinecone_client:
+            return {"error": "Pinecone não habilitado"}
+        
+        try:
+            namespace = f"episode_{episode_id}"
+            index = self.pinecone_client.Index(self.pinecone_index_name)
+            
+            # Obter stats do namespace
+            stats = index.describe_index_stats()
+            namespace_stats = stats.namespaces.get(namespace, {})
+            
+            return {
+                "episode_id": episode_id,
+                "namespace": namespace,
+                "total_vectors": namespace_stats.get("vector_count", 0),
+                "index_name": self.pinecone_index_name
+            }
+            
+        except Exception as e:
+            self.logger.error(f"✗ Erro ao obter stats: {e}")
+            return {"error": str(e)}
     
     def analyze_batch(
         self,

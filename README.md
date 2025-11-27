@@ -6,31 +6,32 @@ Sistema completo para extrair, transcrever, analisar e gerar conteúdo de market
 
 Processar a playlist de podcasts da **Outliers Advisory** para:
 
-1. **Extrair áudio** de vídeos do YouTube (ou transcrever diretamente via API)
-2. **Transcrever e identificar speakers** (Host e Gestor Convidado)
+1. **Transcrever via AssemblyAI** com diarização (2 speakers)
+2. **Identificar speakers** automaticamente (Samuel Ponsoni + Convidado via OpenAI)
 3. **Analisar teses de investimento** usando RAG e LLMs
 4. **Gerar conteúdo de marketing** estruturado para LinkedIn
 
-## ⚡ Novidade: Transcrição via API (Sem Download Local)
+## ⚡ Pipeline Otimizado (AssemblyAI)
 
-**Nova funcionalidade adicionada!** Agora você pode processar vídeos do YouTube **sem baixar MP3 localmente**:
+**Sistema atual utiliza AssemblyAI**:
 
-- ✅ **Mais rápido**: Transcrição direta via OpenAI Whisper API
-- ✅ **Sem usar disco**: Não salva arquivos de áudio
-- ✅ **Mais limpo**: Pipeline simplificado sem gerenciamento de arquivos temporários
-- ✅ **Escalável**: Processa múltiplos vídeos em paralelo
+- ✅ **Diarização perfeita**: Identifica automaticamente 2 speakers com alta precisão
+- ✅ **Processamento em nuvem**: Upload + transcrição assíncrona
+- ✅ **Identificação inteligente**: Extrai nome do convidado da descrição via OpenAI
+- ✅ **Skip automático**: Não re-processa vídeos já transcritos
+- ✅ **Formato WAV 16kHz**: Download e conversão automática do YouTube
 
-### Comandos API disponíveis:
+### Comandos disponíveis:
 
 ```bash
-# Processar playlist via API (recomendado)
-python main.py process-playlist-api --max-videos 3
+# Processar playlist via Google Cloud (recomendado)
+python main.py outliers-api --max-videos 3
 
-# Atalho para playlist da Outliers via API
-python main.py outliers-api --max-videos 5
+# Processar todos os vídeos da playlist
+python main.py outliers-api
 
-# Especificar provedor da API
-python main.py outliers-api --api-provider openai
+# Testar com 1 vídeo
+python main.py test
 ```
 
 ## 🚀 Quick Start
@@ -43,41 +44,29 @@ pip install -r requirements.txt
 cp .env.example .env
 # Editar .env com suas chaves:
 # OPENAI_API_KEY=sk-...
-# HF_TOKEN=hf_...
+# ASSEMBLYAI_KEY=...
 
-# 3. Testar com 1 vídeo (VIA API - SEM DOWNLOAD)
+# 3. Testar com 1 vídeo
 python main.py test
 
-# 4. Processar playlist completa VIA API (recomendado)
+# 4. Processar playlist completa
 python main.py outliers-api --max-videos 5
-
-# 5. Ou usar o modo tradicional (com download)
-python main.py outliers --max-videos 5
 ```
 
 ## 📋 Funcionalidades
 
-### 1. Extração do YouTube
+### 1. Transcrição via AssemblyAI
 
-**Modo Tradicional (com download):**
-- Download automático de playlists
-- Conversão para formato de áudio (MP3)
-- Extração de metadados (título, descrição, duração)
+- **AssemblyAI Speaker Diarization** com alta precisão
+- **Download automático**: yt-dlp + ffmpeg para conversão
+- **Formato WAV 16kHz mono**: Conversão automática
+- **Diarização perfeita**: 2 speakers identificados corretamente
+- **Identificação inteligente**: 
+  - Speaker A = Samuel Ponsoni (fixo)
+  - Speaker B = Extraído da descrição via OpenAI GPT-3.5-turbo
+- **Processamento assíncrono**: Polling até conclusão
 
-**Modo API (novo - recomendado):**
-- ✨ Transcrição direta via OpenAI Whisper API
-- ✨ Sem download de arquivos MP3
-- ✨ Processamento mais rápido e eficiente
-- ✨ Menor uso de disco e recursos
-
-### 2. Transcrição e Diarização
-
-- **Transcrição**: OpenAI Whisper (local, API ou WhisperX)
-- **Diarização**: pyannote.audio 3.0 ou WhisperX
-- **Identificação de Speakers**: Heurísticas para detectar HOST e GUEST
-- **Limpeza de Texto**: Correção de termos financeiros
-
-### 3. Análise de Investimento (RAG + LLMs)
+### 2. Análise de Investimento (RAG + LLMs)
 
 Extrai de cada episódio:
 - **Tese Principal de Investimento**
@@ -86,7 +75,7 @@ Extrai de cada episódio:
 - **Horizonte Temporal e Riscos**
 - **Citações-Chave com Atribuição**
 
-### 4. Geração de Marketing
+### 3. Geração de Marketing
 
 Cria conteúdo estruturado:
 - **Post LinkedIn** (150-300 palavras, com hashtags)
@@ -100,30 +89,25 @@ Modos disponíveis:
 
 ## 🔧 Comandos CLI Disponíveis
 
-### 🌟 Comandos API (Recomendado - Sem Download)
+### 🌟 Comandos Principais
 
 ```bash
-# Processar playlist via API (OpenAI Whisper)
-python main.py process-playlist-api --max-videos 5 --tone didactic
+# Processar playlist completa (Google Cloud)
+python main.py outliers-api --max-videos 5
 
-# Atalho para a playlist da Outliers via API
-python main.py outliers-api --max-videos 3
+# Testar com 1 vídeo
+python main.py test
 
-# Com provedor específico
-python main.py outliers-api --api-provider openai --max-videos 10
+# Processar com tom técnico
+python main.py outliers-api --max-videos 3 --tone technical
 
 # Pular etapas específicas
-python main.py process-playlist-api \
-  --skip-transcription \  # Usar JSONs existentes
+python main.py outliers-api \
   --skip-analysis \       # Pular análise
   --skip-marketing        # Pular marketing
 ```
 
-### 📥 Comandos Tradicionais (Com Download)
-
-```bash
-# Processar playlist baixando MP3s localmente
-python main.py process-playlist --max-videos 5 --tone technical
+### � Outros Comandos
 
 # Atalho Outliers (modo tradicional)
 python main.py outliers --max-videos 3

@@ -5,9 +5,13 @@ Usa yt-dlp para download e conversão automática.
 import os
 import re
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+
+# Suprimir avisos de deprecação do yt-dlp
+warnings.filterwarnings('ignore', message='.*Python version.*deprecated.*')
 
 try:
     import yt_dlp
@@ -51,7 +55,8 @@ class YouTubePlaylistExtractor:
         ydl_opts = {
             'quiet': True,
             'extract_flat': True,
-            'force_generic_extractor': False
+            'force_generic_extractor': False,
+            'no_warnings': True
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
