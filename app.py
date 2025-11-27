@@ -70,6 +70,8 @@ Diretrizes:
 - Se não houver contexto relevante, seja honesto sobre isso
 - Formate respostas de forma clara e estruturada
 - Inclua insights práticos quando possível
+- SEMPRE que usar informações do contexto, referencie explicitamente entre parênteses (ex: "segundo o convidado (Contexto 1)", "como mencionado (Contexto 2 e 3)")
+- Numere os contextos na ordem que aparecem: Contexto 1, Contexto 2, Contexto 3, etc.
 
 Contexto recuperado:
 {context}
@@ -78,15 +80,16 @@ Histórico da conversa:
 {chat_history}"""
 
 
-def search_pinecone(query: str, k: int = 5, score_threshold: float = 0.85):
+def search_pinecone(query: str, k: int = 5, score_threshold: float = 0.85, episode_filter: str = None):
     """
     Busca no Pinecone com threshold de relevância.
-    Busca em TODOS os namespaces (todos os episódios).
+    Busca em TODOS os namespaces (todos os episódios) ou em episódio específico.
     
     Args:
         query: Query de busca
         k: Número máximo de resultados
         score_threshold: Threshold de similaridade (0-1, maior = mais estrito)
+        episode_filter: ID do episódio para filtrar (ex: "IZ1LX8yJ6Fk") ou None para todos
         
     Returns:
         Lista de dicts com {text, metadata, score, video_link}
@@ -97,16 +100,29 @@ def search_pinecone(query: str, k: int = 5, score_threshold: float = 0.85):
         
         # Primeiro, obter todos os namespaces disponíveis
         stats = index.describe_index_stats()
-        namespaces = list(stats.namespaces.keys()) if hasattr(stats, 'namespaces') else []
+        all_namespaces = list(stats.namespaces.keys()) if hasattr(stats, 'namespaces') else []
+        
+        # Filtrar namespaces se necessário
+        if episode_filter:
+            target_namespace = f"episode_{episode_filter}"
+            namespaces = [ns for ns in all_namespaces if ns == target_namespace]
+            filter_msg = f"EPISÓDIO ESPECÍFICO: {episode_filter}"
+        else:
+            namespaces = all_namespaces
+            filter_msg = f"TODOS OS {len(all_namespaces)} EPISÓDIOS"
         
         print(f"\n{'='*60}")
         print(f"QUERY: {query}")
+        print(f"FILTRO: {filter_msg}")
         print(f"THRESHOLD CONFIGURADO: {score_threshold}")
-        print(f"NAMESPACES DISPONÍVEIS: {len(namespaces)}")
+        print(f"NAMESPACES A CONSULTAR: {len(namespaces)}")
         
         if not namespaces:
-            print("⚠️ NENHUM NAMESPACE ENCONTRADO NO PINECONE!")
-            print("Execute: python main.py outliers-api --max-videos 1")
+            if episode_filter:
+                print(f"⚠️ NAMESPACE '{target_namespace}' NÃO ENCONTRADO!")
+            else:
+                print("⚠️ NENHUM NAMESPACE ENCONTRADO NO PINECONE!")
+                print("Execute: python main.py outliers-api --max-videos 1")
             print(f"{'='*60}\n")
             return []
         
@@ -229,16 +245,43 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/episodes')
+def get_episodes():
+    """Lista todos os episódios disponíveis para filtro no chatbot."""
+    episodes = []
+    
+    for transcript_file in TRANSCRIPTS_DIR.glob("*.json"):
+        try:
+            with open(transcript_file, 'r', encoding='utf-8') as f:
+                transcript_data = json.load(f)
+                metadata = transcript_data.get('episode_metadata', {})
+                
+                episodes.append({
+                    'episode_id': metadata.get('episode_id', ''),
+                    'title': metadata.get('title', 'Sem título'),
+                    'episode_number': metadata.get('episode_number', 0),
+                    'duration': metadata.get('duration_seconds', 0)
+                })
+        except Exception as e:
+            print(f"Erro ao carregar episódio {transcript_file}: {e}")
+    
+    # Ordenar por número do episódio
+    episodes.sort(key=lambda x: x.get('episode_number', 0))
+    
+    return jsonify(episodes)
+
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     """Endpoint do chatbot com streaming."""
     data = request.json
     user_input = data.get('message', '')
+    episode_filter = data.get('episode_filter')  # Novo: filtro de episódio
     session_id = session.get('session_id', str(datetime.now().timestamp()))
     session['session_id'] = session_id
     
-    # Buscar contexto no Pinecone
-    search_results = search_pinecone(user_input, k=5, score_threshold=0.85)
+    # Buscar contexto no Pinecone com filtro opcional
+    search_results = search_pinecone(user_input, k=5, score_threshold=0.85, episode_filter=episode_filter)
     context_used = len(search_results) > 0
     
     # Formatar contexto
@@ -290,10 +333,10 @@ def chat():
     # Adicionar links de vídeo se houver contexto
     if search_results:
         video_links = []
-        for r in search_results:
+        for i, r in enumerate(search_results, 1):
             video_links.append({
                 'url': r['video_link'],
-                'title': r['episode_title'][:50] + '...' if len(r['episode_title']) > 50 else r['episode_title'],
+                'title': f'Contexto {i}',
                 'speaker': r['speaker'],
                 'score': r['score']
             })

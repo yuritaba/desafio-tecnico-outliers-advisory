@@ -3,6 +3,7 @@ let currentSection = 'chat';
 let analyses = [];
 let marketing = [];
 let transcripts = [];
+let episodes = [];
 
 // ==================== NAVIGATION ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -18,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupChat();
     
     // Load initial data
+    loadEpisodes();
     loadAnalyses();
     loadMarketing();
     loadTranscripts();
@@ -58,9 +60,13 @@ function setupChat() {
 
 async function sendMessage() {
     const input = document.getElementById('chat-input');
+    const episodeFilter = document.getElementById('episode-filter');
     const message = input.value.trim();
     
     if (!message) return;
+    
+    // Get selected episode filter
+    const selectedEpisode = episodeFilter.value || null;
     
     // Add user message
     addMessage('user', message);
@@ -77,7 +83,10 @@ async function sendMessage() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ message })
+            body: JSON.stringify({ 
+                message,
+                episode_filter: selectedEpisode
+            })
         });
 
         if (!response.ok) {
@@ -127,11 +136,13 @@ async function sendMessage() {
 
         // Create text container
         const textContainer = document.createElement('div');
+        textContainer.className = 'markdown-content';
         bubble.appendChild(textContainer);
 
         // Stream response
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let accumulatedText = '';
         
         while (true) {
             const { done, value } = await reader.read();
@@ -139,7 +150,10 @@ async function sendMessage() {
             if (done) break;
             
             const text = decoder.decode(value);
-            textContainer.textContent += text;
+            accumulatedText += text;
+            
+            // Parse and render markdown
+            textContainer.innerHTML = marked.parse(accumulatedText);
             
             // Scroll to bottom
             scrollToBottom();
@@ -191,6 +205,40 @@ async function clearChat() {
     } catch (error) {
         console.error('Clear chat error:', error);
     }
+}
+
+// ==================== EPISODES ====================
+async function loadEpisodes() {
+    try {
+        const response = await fetch('/api/episodes');
+        episodes = await response.json();
+        
+        renderEpisodeFilter();
+    } catch (error) {
+        console.error('Load episodes error:', error);
+        const select = document.getElementById('episode-filter');
+        select.innerHTML = '<option value="">Erro ao carregar episódios</option>';
+    }
+}
+
+function renderEpisodeFilter() {
+    const select = document.getElementById('episode-filter');
+    
+    if (episodes.length === 0) {
+        select.innerHTML = '<option value="">Nenhum episódio disponível</option>';
+        return;
+    }
+    
+    // Opção "Todos"
+    let options = '<option value="">Todos os episódios</option>';
+    
+    // Adicionar cada episódio
+    options += episodes.map(ep => {
+        const title = ep.title.length > 100 ? ep.title.substring(0, 100) + '...' : ep.title;
+        return `<option value="${ep.episode_id}">${title}</option>`;
+    }).join('');
+    
+    select.innerHTML = options;
 }
 
 // ==================== ANALYSES ====================

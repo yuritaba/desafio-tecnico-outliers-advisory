@@ -259,6 +259,83 @@ body {
     margin: 0.25rem 0;
 }
 
+/* Markdown content styling */
+.markdown-content {
+    line-height: 1.6;
+}
+
+.markdown-content p {
+    margin: 0.75rem 0;
+}
+
+.markdown-content strong {
+    font-weight: 600;
+    color: var(--navy);
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+    margin: 1rem 0 0.5rem 0;
+    font-weight: 600;
+    color: var(--dark-gray);
+}
+
+.markdown-content h1 { font-size: 1.5rem; }
+.markdown-content h2 { font-size: 1.3rem; }
+.markdown-content h3 { font-size: 1.1rem; }
+
+.markdown-content ul,
+.markdown-content ol {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+}
+
+.markdown-content li {
+    margin: 0.25rem 0;
+}
+
+.markdown-content code {
+    background: #f4f4f4;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.markdown-content pre {
+    background: #f4f4f4;
+    padding: 0.75rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0.75rem 0;
+}
+
+.markdown-content pre code {
+    background: none;
+    padding: 0;
+}
+
+.markdown-content blockquote {
+    border-left: 3px solid var(--navy);
+    margin: 0.75rem 0;
+    padding-left: 1rem;
+    color: var(--gray-text);
+    font-style: italic;
+}
+
+.markdown-content a {
+    color: var(--navy);
+    text-decoration: underline;
+}
+
+.markdown-content a:hover {
+    color: #1a3a52;
+}
+
 /* Animação de digitação */
 @keyframes typing {
     0%, 100% { opacity: 0.4; }
@@ -285,10 +362,50 @@ body {
 /* Input do chat */
 .chat-input-container {
     display: flex;
+    flex-direction: column;
     gap: 0.75rem;
     padding: 1rem 1.5rem;
     border-top: 1px solid #E0E0E0;
     background: var(--white);
+}
+
+.episode-filter-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.episode-filter-container label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--dark-gray);
+    white-space: nowrap;
+}
+
+.episode-select {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border: 2px solid #E0E0E0;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-family: inherit;
+    background: var(--white);
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.episode-select:focus {
+    outline: none;
+    border-color: var(--navy);
+}
+
+.episode-select:hover {
+    border-color: #BDBDBD;
+}
+
+.chat-input-container > div:last-child {
+    display: flex;
+    gap: 0.75rem;
 }
 
 #chat-input {

@@ -34,20 +34,25 @@ class PodcastStartDetector:
             self.logger.warning("OpenAI API key não encontrada - usando apenas detecção por keywords")
         
         # Palavras-chave que indicam início de podcast
+        # APENAS saudações ÓBVIAS - casos mais sutis devem usar LLM
         self.greeting_keywords = [
+            # Cumprimentos tradicionais claros
             r'\bbom dia\b',
             r'\bboa tarde\b',
             r'\bboa noite\b',
+            
+            # Boas-vindas explícitas
+            r'\bsejam bem[- ]vindos\b',
+            r'\bbem[- ]vind[oa]s? (a|ao)\b',  # "bem-vindo ao", "bem-vindos a"
+            
+            # Olá direto ao público
             r'\bolá pessoal\b',
             r'\be aí pessoal\b',
             r'\bfala galera\b',
-            r'\bsejam bem[- ]vindos\b',
-            r'\bbem[- ]vindos\b',
-            r'\bestamos aqui\b',
-            r'\bvamos começar\b',
-            r'\bvamos falar\b',
-            r'\bhoje (eu |nós )?vamos\b',
-            r'\bhoje (a gente|temos)\b',
+            
+            # REMOVIDAS: Frases de agradecimento/conversa - deixar pro LLM detectar
+            # REMOVIDAS: "obrigado por", "prazer estar", etc - são muito contextuais
+            # REMOVIDAS: "vamos começar", "vamos falar" - podem aparecer no meio do episódio
         ]
     
     def detect_podcast_start(
@@ -114,12 +119,16 @@ class PodcastStartDetector:
     ) -> Optional[int]:
         """
         Busca o início do podcast por palavras-chave.
+        Procura TODAS as palavras-chave e escolhe a PRIMEIRA que aparecer.
         
         Returns:
             Índice do segmento onde o podcast começa, ou None se não encontrado
         """
         # Verifica apenas os primeiros blocos
         segments_to_check = segments[:min(blocks_to_check, len(segments))]
+        
+        # Encontrar TODAS as palavras-chave nos primeiros blocos
+        all_matches = []
         
         for idx, segment in enumerate(segments_to_check):
             text_lower = segment.text.lower()
@@ -128,38 +137,56 @@ class PodcastStartDetector:
             for pattern in self.greeting_keywords:
                 match = re.search(pattern, text_lower)
                 if match:
-                    # Encontrou! Vamos cortar o texto a partir da palavra-chave
-                    start_pos = match.start()
-                    
-                    # Se a palavra-chave está no meio do texto (há propaganda antes)
-                    if start_pos > 0:
-                        # Cortar o texto original a partir da palavra-chave
-                        text_original = segment.text
-                        # Encontrar a posição no texto original (case-insensitive)
-                        match_original = re.search(pattern, text_original, re.IGNORECASE)
-                        if match_original:
-                            cut_text = text_original[match_original.start():].strip()
-                            
-                            self.logger.info(
-                                f"🎯 Palavra-chave encontrada no MEIO do segmento {idx}"
-                            )
-                            self.logger.info(f"❌ ANTES (com propaganda): '{segment.text[:100]}...'")
-                            self.logger.info(f"✅ DEPOIS (cortado): '{cut_text[:100]}...'")
-                            
-                            # Atualizar o segmento para conter apenas a parte após a palavra-chave
-                            segment.text = cut_text
-                            
-                            self.logger.info(
-                                f"✂️ Propaganda removida DENTRO do segmento {idx}"
-                            )
-                    else:
-                        # Palavra-chave está no início, sem propaganda antes
-                        self.logger.info(
-                            f"✅ Palavra-chave encontrada no INÍCIO do segmento {idx}: "
-                            f"'{segment.text[:80]}...'"
-                        )
-                    
-                    return idx
+                    all_matches.append({
+                        'idx': idx,
+                        'pattern': pattern,
+                        'match': match,
+                        'segment': segment
+                    })
+        
+        # Se não encontrou nenhuma palavra-chave
+        if not all_matches:
+            return None
+        
+        # Escolher o PRIMEIRO match (menor índice de segmento)
+        first_match = min(all_matches, key=lambda x: x['idx'])
+        idx = first_match['idx']
+        segment = first_match['segment']
+        match = first_match['match']
+        pattern = first_match['pattern']
+        
+        # Encontrou! Vamos cortar o texto a partir da palavra-chave
+        start_pos = match.start()
+        
+        # Se a palavra-chave está no meio do texto (há propaganda antes)
+        if start_pos > 0:
+            # Cortar o texto original a partir da palavra-chave
+            text_original = segment.text
+            # Encontrar a posição no texto original (case-insensitive)
+            match_original = re.search(pattern, text_original, re.IGNORECASE)
+            if match_original:
+                cut_text = text_original[match_original.start():].strip()
+                
+                self.logger.info(
+                    f"🎯 Palavra-chave encontrada no MEIO do segmento {idx}"
+                )
+                self.logger.info(f"❌ ANTES (com propaganda): '{segment.text[:100]}...'")
+                self.logger.info(f"✅ DEPOIS (cortado): '{cut_text[:100]}...'")
+                
+                # Atualizar o segmento para conter apenas a parte após a palavra-chave
+                segment.text = cut_text
+                
+                self.logger.info(
+                    f"✂️ Propaganda removida DENTRO do segmento {idx}"
+                )
+        else:
+            # Palavra-chave está no início, sem propaganda antes
+            self.logger.info(
+                f"✅ Palavra-chave encontrada no INÍCIO do segmento {idx}: "
+                f"'{segment.text[:80]}...'"
+            )
+        
+        return idx
         
         return None
     
@@ -190,19 +217,28 @@ class PodcastStartDetector:
         # Prompt para o LLM
         prompt = f"""Você é um especialista em análise de podcasts. Abaixo estão os primeiros segmentos de um episódio.
 
-Sua tarefa é identificar EXATAMENTE onde o podcast REALMENTE começa (excluindo propagandas, vinhetas, intros, comerciais e cortes).
+Sua tarefa é identificar EXATAMENTE onde o podcast REALMENTE começa (excluindo propagandas, vinhetas, intros, comerciais e cortes que vêm ANTES da conversa começar).
 
-O apresentador geralmente começa com cumprimentos (bom dia, boa tarde, boa noite) e apresentando o convidado.
+O podcast COMEÇA quando:
+- O apresentador cumprimenta (bom dia, boa tarde, boa noite) OU
+- O apresentador agradece/recebe o convidado ("obrigado por aceitar", "prazer ter você aqui") OU
+- Inicia-se uma conversa direta entre apresentador e convidado OU
+- O apresentador se apresenta ou apresenta o episódio
+
+O podcast NÃO COMEÇOU se:
+- É propaganda de patrocinador
+- É vinheta/música de abertura
+- São cortes ou trechos antecipados do episódio
+- É apenas narração sem interação
 
 Segmentos:
 {segments_text}
 
 INSTRUÇÕES CRÍTICAS:
-1. Identifique o NÚMERO do segmento onde o podcast começa de verdade
+1. Identifique o NÚMERO do segmento onde a CONVERSA DO PODCAST começa de verdade
 2. Responda APENAS com o número do segmento (exemplo: "2")
 3. NÃO adicione explicações, NÃO adicione texto extra
 4. Se o podcast já começa no segmento 0, responda "0"
-5. Se não tiver certeza, responda "0"
 
 Resposta (apenas o número):"""
         

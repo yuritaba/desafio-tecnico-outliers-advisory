@@ -6,6 +6,7 @@
     <title>Case Técnico Outliers Advisory</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -67,17 +68,25 @@
                     </div>
                     
                     <div class="chat-input-container">
-                        <textarea 
-                            id="chat-input" 
-                            placeholder="Digite sua pergunta..." 
-                            rows="1"
-                        ></textarea>
-                        <button id="send-btn" class="btn-primary">
-                            <span>Enviar</span>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-                            </svg>
-                        </button>
+                        <div class="episode-filter-container">
+                            <label for="episode-filter">Filtrar por episódio:</label>
+                            <select id="episode-filter" class="episode-select">
+                                <option value="">Carregando episódios...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <textarea 
+                                id="chat-input" 
+                                placeholder="Digite sua pergunta..." 
+                                rows="1"
+                            ></textarea>
+                            <button id="send-btn" class="btn-primary">
+                                <span>Enviar</span>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>
