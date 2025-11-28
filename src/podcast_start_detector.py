@@ -33,14 +33,9 @@ class PodcastStartDetector:
             self.client = None
             self.logger.warning("OpenAI API key não encontrada - usando apenas detecção por keywords")
         
-        # Palavras-chave que indicam início de podcast
-        # APENAS saudações ÓBVIAS - casos mais sutis devem usar LLM
+        # Palavras-chave para PRIORIDADE 3 (saudações genéricas)
+        # NÃO incluir cumprimentos tradicionais (já estão na PRIORIDADE 1)
         self.greeting_keywords = [
-            # Cumprimentos tradicionais claros
-            r'\bbom dia\b',
-            r'\bboa tarde\b',
-            r'\bboa noite\b',
-            
             # Boas-vindas explícitas
             r'\bsejam bem[- ]vindos\b',
             
@@ -50,7 +45,7 @@ class PodcastStartDetector:
             r'\bfala galera\b',
         ]
         
-        # Padrões que indicam INÍCIO REAL da conversa (chamada direta ao convidado)
+        # Padrões que indicam INÍCIO REAL da conversa (PRIORIDADE 2)
         self.conversation_start_patterns = [
             r'\b\w+,?\s+é uma (verdadeira\s+)?honra',  # "Nome, é uma honra", "Nome, é uma verdadeira honra"
             r'\b\w+,\s+obrigad[oa]',  # "Nome, obrigado"
@@ -122,7 +117,10 @@ class PodcastStartDetector:
     ) -> Optional[int]:
         """
         Busca o início do podcast por palavras-chave.
-        Prioriza padrões de CONVERSA DIRETA (chamada ao convidado) sobre saudações genéricas.
+        
+        PRIORIDADE 1: Cumprimentos tradicionais (bom dia, boa tarde, boa noite)
+        PRIORIDADE 2: Chamadas diretas ao convidado (Nome, é uma honra...)
+        PRIORIDADE 3: Outras saudações genéricas
         
         Returns:
             Índice do segmento onde o podcast começa, ou None se não encontrado
@@ -130,21 +128,55 @@ class PodcastStartDetector:
         # Verifica apenas os primeiros blocos
         segments_to_check = segments[:min(blocks_to_check, len(segments))]
         
-        # PRIORIDADE 1: Procurar por padrões de conversa direta (chamada ao convidado)
+        # PRIORIDADE 1: Cumprimentos tradicionais (bom dia, boa tarde, boa noite)
+        traditional_greetings = [
+            r'\bbom dia\b',
+            r'\bboa tarde\b',
+            r'\bboa noite\b',
+        ]
+        
+        for idx, segment in enumerate(segments_to_check):
+            text = segment.text
+            text_lower = text.lower()
+            
+            for pattern in traditional_greetings:
+                match = re.search(pattern, text_lower)
+                if match:
+                    # Encontrou cumprimento tradicional!
+                    start_pos = match.start()
+                    
+                    self.logger.info(
+                        f"🎯 CUMPRIMENTO TRADICIONAL detectado no segmento {idx}: '{text[start_pos:start_pos+80]}...'"
+                    )
+                    
+                    # Se há propaganda antes do cumprimento, cortar
+                    if start_pos > 0:
+                        # Pegar texto original (case-sensitive) a partir do match
+                        match_original = re.search(pattern, text, re.IGNORECASE)
+                        if match_original:
+                            cut_text = text[match_original.start():].strip()
+                            self.logger.info(f"✂️ Cortando propaganda antes do cumprimento")
+                            self.logger.info(f"❌ ANTES: '{text[:100]}...'")
+                            self.logger.info(f"✅ DEPOIS: '{cut_text[:100]}...'")
+                            segment.text = cut_text
+                    
+                    return idx
+        
+        # PRIORIDADE 2: Chamadas diretas ao convidado (Nome, é uma honra...)
+        self.logger.info("⚠️ Não encontrou cumprimentos tradicionais, buscando chamadas diretas...")
+        
         for idx, segment in enumerate(segments_to_check):
             text = segment.text
             
             for pattern in self.conversation_start_patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
-                    # Encontrou chamada direta ao convidado!
                     start_pos = match.start()
                     
                     self.logger.info(
-                        f"🎯 CONVERSA DIRETA detectada no segmento {idx}: '{text[start_pos:start_pos+80]}...'"
+                        f"🎯 CHAMADA DIRETA detectada no segmento {idx}: '{text[start_pos:start_pos+80]}...'"
                     )
                     
-                    # Se há propaganda antes da chamada, cortar
                     if start_pos > 0:
                         cut_text = text[start_pos:].strip()
                         self.logger.info(f"✂️ Cortando propaganda antes da chamada")
@@ -154,8 +186,8 @@ class PodcastStartDetector:
                     
                     return idx
         
-        # PRIORIDADE 2: Se não encontrou conversa direta, buscar saudações genéricas
-        self.logger.info("⚠️ Não encontrou conversa direta, buscando saudações genéricas...")
+        # PRIORIDADE 3: Outras saudações genéricas
+        self.logger.info("⚠️ Não encontrou chamadas diretas, buscando saudações genéricas...")
         
         all_matches = []
         
