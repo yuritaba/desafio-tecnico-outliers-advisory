@@ -43,16 +43,19 @@ class PodcastStartDetector:
             
             # Boas-vindas explícitas
             r'\bsejam bem[- ]vindos\b',
-            r'\bbem[- ]vind[oa]s? (a|ao)\b',  # "bem-vindo ao", "bem-vindos a"
             
             # Olá direto ao público
             r'\bolá pessoal\b',
             r'\be aí pessoal\b',
             r'\bfala galera\b',
-            
-            # REMOVIDAS: Frases de agradecimento/conversa - deixar pro LLM detectar
-            # REMOVIDAS: "obrigado por", "prazer estar", etc - são muito contextuais
-            # REMOVIDAS: "vamos começar", "vamos falar" - podem aparecer no meio do episódio
+        ]
+        
+        # Padrões que indicam INÍCIO REAL da conversa (chamada direta ao convidado)
+        self.conversation_start_patterns = [
+            r'\b\w+,?\s+é uma (verdadeira\s+)?honra',  # "Nome, é uma honra", "Nome, é uma verdadeira honra"
+            r'\b\w+,\s+obrigad[oa]',  # "Nome, obrigado"
+            r'\b\w+,\s+seja bem[- ]vind[oa]',  # "Nome, seja bem-vindo"
+            r'\b\w+,\s+prazer',  # "Nome, prazer"
         ]
     
     def detect_podcast_start(
@@ -119,7 +122,7 @@ class PodcastStartDetector:
     ) -> Optional[int]:
         """
         Busca o início do podcast por palavras-chave.
-        Procura TODAS as palavras-chave e escolhe a PRIMEIRA que aparecer.
+        Prioriza padrões de CONVERSA DIRETA (chamada ao convidado) sobre saudações genéricas.
         
         Returns:
             Índice do segmento onde o podcast começa, ou None se não encontrado
@@ -127,7 +130,33 @@ class PodcastStartDetector:
         # Verifica apenas os primeiros blocos
         segments_to_check = segments[:min(blocks_to_check, len(segments))]
         
-        # Encontrar TODAS as palavras-chave nos primeiros blocos
+        # PRIORIDADE 1: Procurar por padrões de conversa direta (chamada ao convidado)
+        for idx, segment in enumerate(segments_to_check):
+            text = segment.text
+            
+            for pattern in self.conversation_start_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    # Encontrou chamada direta ao convidado!
+                    start_pos = match.start()
+                    
+                    self.logger.info(
+                        f"🎯 CONVERSA DIRETA detectada no segmento {idx}: '{text[start_pos:start_pos+80]}...'"
+                    )
+                    
+                    # Se há propaganda antes da chamada, cortar
+                    if start_pos > 0:
+                        cut_text = text[start_pos:].strip()
+                        self.logger.info(f"✂️ Cortando propaganda antes da chamada")
+                        self.logger.info(f"❌ ANTES: '{text[:100]}...'")
+                        self.logger.info(f"✅ DEPOIS: '{cut_text[:100]}...'")
+                        segment.text = cut_text
+                    
+                    return idx
+        
+        # PRIORIDADE 2: Se não encontrou conversa direta, buscar saudações genéricas
+        self.logger.info("⚠️ Não encontrou conversa direta, buscando saudações genéricas...")
+        
         all_matches = []
         
         for idx, segment in enumerate(segments_to_check):
@@ -220,25 +249,33 @@ class PodcastStartDetector:
 Sua tarefa é identificar EXATAMENTE onde o podcast REALMENTE começa (excluindo propagandas, vinhetas, intros, comerciais e cortes que vêm ANTES da conversa começar).
 
 O podcast COMEÇA quando:
-- O apresentador cumprimenta (bom dia, boa tarde, boa noite) OU
-- O apresentador agradece/recebe o convidado ("obrigado por aceitar", "prazer ter você aqui") OU
-- Inicia-se uma conversa direta entre apresentador e convidado OU
-- O apresentador se apresenta ou apresenta o episódio
+- O apresentador DIRETAMENTE chama o convidado pelo nome ("Howard, é uma honra...", "Fulano, obrigado por estar aqui") OU
+- O apresentador cumprimenta E já está na conversa (bom dia + pergunta) OU
+- O apresentador agradece/recebe o convidado DE FORMA PESSOAL ("obrigado por aceitar", "prazer ter você aqui") OU
+- Inicia-se uma PERGUNTA ou DIÁLOGO entre apresentador e convidado
 
 O podcast NÃO COMEÇOU se:
-- É propaganda de patrocinador
+- É "bem-vindo ao episódio número X" (intro formal genérica)
+- É propaganda de patrocinador ou da própria empresa
 - É vinheta/música de abertura
 - São cortes ou trechos antecipados do episódio
-- É apenas narração sem interação
+- É apenas narração institucional/descritiva sem interação pessoal
+- Está falando SOBRE o convidado, mas não COM o convidado ainda
+
+EXEMPLO DE INTRO FORMAL (NÃO é o início):
+"bem-vindo ao episódio número 4 do podcast... [propaganda da empresa]... Howard, é uma verdadeira honra..."
+INÍCIO REAL: Quando diz "Howard, é uma verdadeira honra..." (chamou o convidado diretamente)
 
 Segmentos:
 {segments_text}
 
 INSTRUÇÕES CRÍTICAS:
-1. Identifique o NÚMERO do segmento onde a CONVERSA DO PODCAST começa de verdade
-2. Responda APENAS com o número do segmento (exemplo: "2")
-3. NÃO adicione explicações, NÃO adicione texto extra
-4. Se o podcast já começa no segmento 0, responda "0"
+1. Identifique o NÚMERO do segmento onde a CONVERSA REAL DO PODCAST começa
+2. Procure pelo momento em que o host CHAMA O CONVIDADO PELO NOME ou faz a PRIMEIRA PERGUNTA
+3. Ignore intros formais como "bem-vindo ao episódio X" - procure pela CONVERSA
+4. Responda APENAS com o número do segmento (exemplo: "2")
+5. NÃO adicione explicações, NÃO adicione texto extra
+6. Se o podcast já começa no segmento 0 COM CONVERSA REAL, responda "0"
 
 Resposta (apenas o número):"""
         
