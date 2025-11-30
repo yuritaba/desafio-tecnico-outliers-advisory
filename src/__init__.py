@@ -14,19 +14,17 @@ from .models import (
     ProcessingNote
 )
 
-# Transcription pipeline
-from .pipeline import PodcastPipeline
-from .transcriber import Transcriber
-from .diarizer import Diarizer
-from .aligner import Aligner
-from .speaker_identifier import SpeakerIdentifier
-from .text_cleaner import TextCleaner
+# Pipeline API (AssemblyAI)
+from .master_pipeline_api import MasterPipelineAPI, process_outliers_playlist_api
+from .youtube_transcriber_assemblyai import YouTubeTranscriberAssemblyAI
 
-# Extended pipeline
-from .youtube_extractor import YouTubePlaylistExtractor
+# Agents
 from .investment_agent import InvestmentAnalysisAgent
 from .marketing_agent import MarketingAgent
-from .master_pipeline import MasterPipeline, process_outliers_playlist
+
+# Utilities
+from .podcast_start_detector import PodcastStartDetector
+from .utils import validate_audio_file
 
 __all__ = [
     # Models
@@ -36,18 +34,16 @@ __all__ = [
     'Participant',
     'ProcessingNote',
     
-    # Transcription
-    'PodcastPipeline',
-    'Transcriber',
-    'Diarizer',
-    'Aligner',
-    'SpeakerIdentifier',
-    'TextCleaner',
+    # Pipeline
+    'MasterPipelineAPI',
+    'process_outliers_playlist_api',
+    'YouTubeTranscriberAssemblyAI',
     
-    # Extended pipeline
-    'YouTubePlaylistExtractor',
+    # Agents
     'InvestmentAnalysisAgent',
     'MarketingAgent',
-    'MasterPipeline',
-    'process_outliers_playlist',
+    
+    # Utilities
+    'PodcastStartDetector',
+    'validate_audio_file',
 ]

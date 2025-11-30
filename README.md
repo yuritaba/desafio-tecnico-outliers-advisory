@@ -1,212 +1,157 @@
-# 🎙️ Pipeline de Processamento de Podcasts Financeiros
+# Pipeline de Processamento de Podcasts Financeiros
 
-Sistema completo para extrair, transcrever, analisar e gerar conteúdo de marketing a partir de podcasts financeiros no YouTube.
+Sistema para transcrever, analisar e gerar conteúdo de marketing a partir do podcasts Second Level no YouTube.
 
-## 🎯 Objetivo
+## Estrutura do Projeto
 
-Processar a playlist de podcasts da **Outliers Advisory** para:
-
-1. **Transcrever via AssemblyAI** com diarização (2 speakers)
-2. **Identificar speakers** automaticamente (Samuel Ponsoni + Convidado via OpenAI)
-3. **Analisar teses de investimento** usando RAG e LLMs
-4. **Gerar conteúdo de marketing** estruturado para LinkedIn
-
-## ⚡ Pipeline Otimizado (AssemblyAI)
-
-**Sistema atual utiliza AssemblyAI**:
-
-- ✅ **Diarização perfeita**: Identifica automaticamente 2 speakers com alta precisão
-- ✅ **Processamento em nuvem**: Upload + transcrição assíncrona
-- ✅ **Identificação inteligente**: Extrai nome do convidado da descrição via OpenAI
-- ✅ **Skip automático**: Não re-processa vídeos já transcritos
-- ✅ **Formato WAV 16kHz**: Download e conversão automática do YouTube
-
-### Comandos disponíveis:
-
-```bash
-# Processar playlist via Google Cloud (recomendado)
-python main.py outliers-api --max-videos 3
-
-# Processar todos os vídeos da playlist
-python main.py outliers-api
-
-# Testar com 1 vídeo
-python main.py test
+```
+desafio-tecnico-outliers-advisory/
+├── main.py                              # CLI principal para ingestão de dados
+├── app.py                               # Aplicação web Flask (chatbot + visualizações)
+├── requirements.txt                     # Dependências Python
+├── src/
+│   ├── master_pipeline_api.py          # Orquestrador principal do pipeline
+│   ├── youtube_transcriber_assemblyai.py  # Transcrição via AssemblyAI
+│   ├── investment_agent.py             # Análise de investimentos (RAG + LLMs)
+│   ├── marketing_agent.py              # Geração de conteúdo de marketing
+│   ├── podcast_start_detector.py       # Detecção de início real do podcast
+│   ├── models.py                        # Modelos Pydantic
+│   └── utils.py                         # Funções utilitárias
+├── output/ 
+│   ├── transcripts/                     # Transcrições JSON (não commitado pelo .gitignore)
+│   ├── analyses/                        # Análises de investimento (não commitado pelo .gitignore)
+│   └── marketing/                       # Conteúdo de marketing gerado (não commitado pelo .gitignore)
+├── templates/                           # Templates HTML do Flask
+└── static/                              # Arquivos estáticos (CSS, JS)
 ```
 
-## 🚀 Quick Start
+### Descrição dos Arquivos Principais
+
+**main.py**
+- Pipeline para processamento em lote da playlist do podcast
+- Comandos: `outliers-api`, `analyze`, `marketing`
+- Orquestra transcrição, análise e faz geração de marketing
+
+**app.py**
+- Interface web com chatbot RAG (Pinecone + OpenAI)
+- Visualização de análises e conteúdo de marketing
+- API REST para consultas
+
+**src/master_pipeline_api.py**
+- Pipeline completo: transcrição via AssemblyAI + análise + marketing
+- Gerencia fluxo entre componentes
+- Skip automático de vídeos já processados
+
+**src/youtube_transcriber_assemblyai.py**
+- Download de áudio do YouTube (yt-dlp)
+- Conversão para WAV 16kHz mono
+- Transcrição via AssemblyAI com diarização (2 speakers)
+- Identificação automática de speakers (Samuel Ponsoni + convidado)
+
+**src/investment_agent.py**
+- Análise de teses de investimento usando RAG
+- Extração de ativos, setores, contexto macroeconômico
+- Armazenamento vetorial no Pinecone
+- Citações com timestamps e atribuição de speaker
+
+**src/marketing_agent.py**
+- Geração de posts para LinkedIn
+- Criação de carrosséis (5 slides)
+- Extração de citações impactantes
+- Modos: técnico ou didático
+
+## Como Rodar
+
+### 1. Criar ambiente virtual
 
 ```bash
-# 1. Instalar dependências
+python3 -m venv venv
+source venv/bin/activate  # Linux/macOS
+# ou
+venv\Scripts\activate     # Windows
+```
+
+### 2. Instalar dependências
+
+```bash
 pip install -r requirements.txt
+```
 
-# 2. Configurar variáveis de ambiente
-cp .env.example .env
-# Editar .env com suas chaves:
-# OPENAI_API_KEY=sk-...
-# ASSEMBLYAI_KEY=...
+### 3. Configurar variáveis de ambiente
 
-# 3. Testar com 1 vídeo
-python main.py test
+Crie um arquivo `.env` na raiz do projeto:
 
-# 4. Processar playlist completa
+```
+OPENAI_API_KEY=sk-...
+ASSEMBLYAI_API_KEY=...
+PINECONE_API_KEY=...
+PINECONE_INDEX_NAME=outliers-case
+PINECONE_ENVIRONMENT=us-east-1
+```
+
+### 4. Rodar ingestão de dados (main.py)
+
+Processar playlist completa:
+```bash
 python main.py outliers-api --max-videos 5
 ```
 
-## 📋 Funcionalidades
-
-### 1. Transcrição via AssemblyAI
-
-- **AssemblyAI Speaker Diarization** com alta precisão
-- **Download automático**: yt-dlp + ffmpeg para conversão
-- **Formato WAV 16kHz mono**: Conversão automática
-- **Diarização perfeita**: 2 speakers identificados corretamente
-- **Identificação inteligente**: 
-  - Speaker A = Samuel Ponsoni (fixo)
-  - Speaker B = Extraído da descrição via OpenAI GPT-3.5-turbo
-- **Processamento assíncrono**: Polling até conclusão
-
-### 2. Análise de Investimento (RAG + LLMs)
-
-Extrai de cada episódio:
-- **Tese Principal de Investimento**
-- **Ativos/Setores Mencionados**
-- **Contexto Macroeconômico**
-- **Horizonte Temporal e Riscos**
-- **Citações-Chave com Atribuição**
-
-### 3. Geração de Marketing
-
-Cria conteúdo estruturado:
-- **Post LinkedIn** (150-300 palavras, com hashtags)
-- **Carrossel** (5 slides com título + bullets)
-- **Citações** (5 frases impactantes com speaker)
-- **Sumário Executivo** para equipe de marketing
-
-Modos disponíveis:
-- **Technical**: Para profissionais do mercado financeiro
-- **Didactic**: Para público geral (padrão)
-
-## 🔧 Comandos CLI Disponíveis
-
-### 🌟 Comandos Principais
-
+Processar apenas análise (transcrições já existem):
 ```bash
-# Processar playlist completa (Google Cloud)
-python main.py outliers-api --max-videos 5
-
-# Testar com 1 vídeo
-python main.py test
-
-# Processar com tom técnico
-python main.py outliers-api --max-videos 3 --tone technical
-
-# Pular etapas específicas
-python main.py outliers-api \
-  --skip-analysis \       # Pular análise
-  --skip-marketing        # Pular marketing
+python main.py analyze --transcript-file output/transcripts/VIDEO_ID.json
 ```
 
-### � Outros Comandos
-
-# Atalho Outliers (modo tradicional)
-python main.py outliers --max-videos 3
-
-# Com todas as opções
-python main.py process-playlist \
-  --playlist-url "https://youtube.com/playlist?list=..." \
-  --max-videos 10 \
-  --tone didactic \
-  --skip-download \       # Usar MP3s já baixados
-  --skip-transcription \  # Usar JSONs existentes
-  --log-level DEBUG
-```
-
-### 🎧 Processar Áudio Local
-
+Gerar apenas marketing:
 ```bash
-# Processar um arquivo de áudio com o pipeline completo
-python main.py process podcast.mp3 \
-  --output output/transcript.json \
-  --title "Episódio 001" \
-  --host-name "João Silva" \
-  --guest-names "Maria Santos"
-
-# Com opções avançadas
-python main.py process audio.mp3 \
-  --whisper-backend whisperx \
-  --whisper-model large-v3 \
-  --diarization-backend pyannote \
-  --max-speakers 2 \
-  --language pt \
-  --no-clean  # Desabilita limpeza de texto
-```
-
-### 📊 Análise e Marketing Individuais
-
-```bash
-# Analisar uma transcrição existente
-python main.py analyze output/transcripts/ep_001.json
-
-# Gerar marketing de uma análise
 python main.py marketing \
-  output/analyses/ep_001_analysis.json \
-  output/transcripts/ep_001.json \
-  --tone didactic
-
-# Validar arquivo de transcrição
-python main.py validate output/transcript.json
+  --analysis-file output/analyses/VIDEO_ID_analysis.json \
+  --transcript-file output/transcripts/VIDEO_ID.json
 ```
 
-### 🧪 Teste
+### 5. Rodar aplicação web (app.py)
 
 ```bash
-# Testar pipeline completo com 1 vídeo (via API)
-python main.py test
+python app.py
 ```
 
-## 🏗️ Arquitetura
+Acesse: http://localhost:5000
 
-### Modo Tradicional (com download):
+Funcionalidades:
+- Chatbot com RAG para consultar análises
+- Visualização de análises de investimento
+- Visualização de conteúdo de marketing gerado
+
+## Fluxo do Pipeline
+
 ```
 YouTube Playlist
     ↓
-[youtube_extractor.py] → data/*.mp3
+[1] Transcrição (AssemblyAI)
+    - Download de áudio
+    - Conversão para WAV 16kHz
+    - Diarização (2 speakers)
+    - Identificação de speakers
     ↓
-[pipeline.py] → output/transcripts/*.json
-    ├─ transcriber.py
-    ├─ diarizer.py
-    ├─ aligner.py
-    ├─ speaker_identifier.py
-    └─ text_cleaner.py
+output/transcripts/*.json
     ↓
-[investment_agent.py] → output/analyses/*_analysis.json
-    └─ RAG + LangChain + GPT-4
+[2] Análise de Investimento
+    - RAG com Pinecone
+    - Extração de teses
+    - Identificação de ativos/setores
+    - Contexto macroeconômico
     ↓
-[marketing_agent.py] → output/marketing/*_marketing.json
-    └─ Prompts especializados + GPT-4
+output/analyses/*_analysis.json
+    ↓
+[3] Geração de Marketing
+    - Posts LinkedIn
+    - Carrosséis
+    - Citações
+    ↓
+output/marketing/*_marketing.json
 ```
 
-### Modo API (novo - recomendado):
-```
-YouTube Playlist
-    ↓
-[youtube_transcriber.py] → OpenAI Whisper API
-    ├─ Extrai URL do vídeo
-    ├─ Áudio temporário em memória
-    └─ API retorna transcrição com timestamps
-    ↓
-output/transcripts/*.json (estruturado)
-    ↓
-[investment_agent.py] → output/analyses/*_analysis.json
-    └─ RAG + LangChain + GPT-4
-    ↓
-[marketing_agent.py] → output/marketing/*_marketing.json
-    └─ Prompts especializados + GPT-4
-```
+## Requisitos
 
-**💡 Vantagens do Modo API:**
-- ⚡ Mais rápido (sem tempo de download)
-- 💾 Não usa espaço em disco
-- 🔄 Mais escalável
-- 🎯 Foco no processamento, não no gerenciamento de arquivos
+- Python 3.8+
+- ffmpeg (para conversão de áudio)
+- APIs: OpenAI, AssemblyAI, Pinecone
