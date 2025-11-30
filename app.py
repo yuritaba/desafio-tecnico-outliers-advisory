@@ -24,10 +24,11 @@ app.secret_key = os.urandom(24)
 
 # Configurar CORS para permitir todas as origens (desenvolvimento)
 CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost:5000", "http://127.0.0.1:5000"],
+    r"/*": {
+        "origins": "*",
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": True
     }
 })
 
@@ -80,7 +81,7 @@ Histórico da conversa:
 {chat_history}"""
 
 
-def search_pinecone(query: str, k: int = 5, score_threshold: float = 0.85, episode_filter: str = None):
+def search_pinecone(query: str, k: int = 5, score_threshold: float = 0.847, episode_filter: str = None):
     """
     Busca no Pinecone com threshold de relevância.
     Busca em TODOS os namespaces (todos os episódios) ou em episódio específico.
@@ -281,7 +282,7 @@ def chat():
     session['session_id'] = session_id
     
     # Buscar contexto no Pinecone com filtro opcional
-    search_results = search_pinecone(user_input, k=5, score_threshold=0.85, episode_filter=episode_filter)
+    search_results = search_pinecone(user_input, k=5, score_threshold=0.847, episode_filter=episode_filter)
     context_used = len(search_results) > 0
     
     # Formatar contexto
@@ -477,4 +478,4 @@ def clear_history():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, threaded=True)
+    app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)

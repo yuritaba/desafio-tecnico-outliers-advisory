@@ -162,12 +162,12 @@ Sumário Executivo:"""
     ) -> List[Document]:
         """
         Cria documentos com metadados ricos para cada utterance.
-        Resolve o problema de speakers em chunks mistos.
+        Utterances >2000 chars são divididas em chunks com 200 chars de overlap.
         
         Estratégia:
-        1. Cada utterance vira um documento (não chunk arbitrário)
-        2. Metadados: speaker, start, end, episode_id, title
-        3. Texto inclui speaker no início para contexto
+        1. Utterances ≤2000 chars: 1 documento completo
+        2. Utterances >2000 chars: Chunks de até 2000 chars com overlap de 200
+        3. Todos os chunks mantêm os mesmos metadados (timestamps iguais)
         
         Args:
             transcript: Transcrição completa
@@ -178,33 +178,112 @@ Sumário Executivo:"""
         documents = []
         episode_id = transcript.episode_metadata.episode_id
         title = transcript.episode_metadata.title
+        chunked_count = 0
         
         for utt in transcript.utterances:
             # Texto com speaker embutido (para busca semântica)
             text_with_speaker = f"{utt.speaker}: {utt.text}"
             
-            # Metadados ricos
-            metadata = {
-                "episode_id": episode_id,
-                "episode_title": title,
-                "speaker": utt.speaker or "Unknown",
-                "speaker_raw_id": utt.speaker_raw_id or "unknown",
-                "start_time": utt.start_time,
-                "end_time": utt.end_time,
-                "duration": utt.end_time - utt.start_time,
-                "text_length": len(utt.text),
-                "timestamp": datetime.now().isoformat(),
-                "source": "utterance"  # Indica que é utterance completa, não chunk
-            }
-            
-            doc = Document(
-                page_content=text_with_speaker,
-                metadata=metadata
-            )
-            documents.append(doc)
+            # Verificar se precisa chunking
+            if len(text_with_speaker) <= 2000:
+                # CASO COMUM: Utterance completa
+                metadata = {
+                    "episode_id": episode_id,
+                    "episode_title": title,
+                    "speaker": utt.speaker or "Unknown",
+                    "speaker_raw_id": utt.speaker_raw_id or "unknown",
+                    "start_time": utt.start_time,
+                    "end_time": utt.end_time,
+                    "duration": utt.end_time - utt.start_time,
+                    "text_length": len(utt.text),
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "utterance",
+                    "is_chunked": False
+                }
+                
+                doc = Document(
+                    page_content=text_with_speaker,
+                    metadata=metadata
+                )
+                documents.append(doc)
+                
+            else:
+                # CASO RARO: Utterance longa - dividir em chunks com overlap
+                chunked_count += 1
+                chunks = self._split_text_with_overlap(text_with_speaker, max_size=2000, overlap=200)
+                
+                for chunk_text in chunks:
+                    # Mesmos metadados para todos os chunks (timestamps idênticos)
+                    metadata = {
+                        "episode_id": episode_id,
+                        "episode_title": title,
+                        "speaker": utt.speaker or "Unknown",
+                        "speaker_raw_id": utt.speaker_raw_id or "unknown",
+                        "start_time": utt.start_time,
+                        "end_time": utt.end_time,
+                        "duration": utt.end_time - utt.start_time,
+                        "text_length": len(chunk_text),
+                        "timestamp": datetime.now().isoformat(),
+                        "source": "utterance",
+                        "is_chunked": True
+                    }
+                    
+                    doc = Document(
+                        page_content=chunk_text,
+                        metadata=metadata
+                    )
+                    documents.append(doc)
         
-        self.logger.info(f"📄 Criados {len(documents)} documentos com metadados (1 por utterance)")
+        if chunked_count > 0:
+            self.logger.info(f"📄 Criados {len(documents)} documentos ({chunked_count} utterances divididas em chunks)")
+        else:
+            self.logger.info(f"📄 Criados {len(documents)} documentos (nenhuma utterance precisou chunking)")
+        
         return documents
+    
+    def _split_text_with_overlap(self, text: str, max_size: int = 2000, overlap: int = 200) -> list:
+        """
+        Divide texto em chunks com overlap, garantindo que todo conteúdo apareça.
+        
+        Exemplo: texto de 3000 chars
+        - Chunk 1: chars 0-2000 (2000 chars)
+        - Chunk 2: chars 1800-3000 (1200 chars, overlap de 200 com chunk 1)
+        
+        Args:
+            text: Texto completo
+            max_size: Tamanho máximo do chunk
+            overlap: Overlap entre chunks consecutivos
+            
+        Returns:
+            Lista de chunks de texto
+        """
+        if len(text) <= max_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            # Definir fim do chunk
+            end = start + max_size
+            
+            # Se não é o último chunk, garantir que há overlap
+            if end < len(text):
+                chunk = text[start:end]
+            else:
+                # Último chunk: pegar até o final
+                chunk = text[start:]
+            
+            chunks.append(chunk)
+            
+            # Próximo chunk começa com overlap
+            start = end - overlap
+            
+            # Se o próximo chunk seria muito pequeno, incluir no atual
+            if len(text) - start < overlap:
+                break
+        
+        return chunks
         
     def analyze_transcript(
         self,
@@ -216,22 +295,15 @@ Sumário Executivo:"""
         
         Args:
             transcript: Transcrição processada
-            use_rag: Se True, usa RAG para análise contextual
+            use_rag: Se True, usa RAG para análise contextual (sempre True por padrão)
             
         Returns:
             Dict com análise estruturada
         """
         self.logger.info(f"Analisando: {transcript.episode_metadata.title}")
         
-        # Preparar contexto
-        full_text = self._prepare_transcript_text(transcript)
-        
-        if use_rag and len(full_text) > 8000:
-            # Para transcrições longas, usar RAG
-            analysis = self._analyze_with_rag(transcript, full_text)
-        else:
-            # Para transcrições curtas, análise direta
-            analysis = self._analyze_direct(transcript, full_text)
+        # SEMPRE usar RAG (não tentar ler transcrição completa)
+        analysis = self._analyze_with_rag(transcript)
         
         return {
             'episode_id': transcript.episode_metadata.episode_id,
@@ -244,25 +316,16 @@ Sumário Executivo:"""
             'analysis': analysis,
             'metadata': {
                 'model': self.llm.model_name,
-                'method': 'rag' if use_rag and len(full_text) > 8000 else 'direct',
-                'text_length': len(full_text)
+                'method': 'rag',
+                'use_rag': use_rag
             }
         }
     
-    def _prepare_transcript_text(self, transcript: TranscriptOutput) -> str:
-        """Prepara texto da transcrição para análise."""
-        lines = []
-        for utterance in transcript.utterances:
-            speaker_name = utterance.speaker or utterance.speaker_raw_id or "Unknown"
-            lines.append(f"{speaker_name}: {utterance.text}")
-        return "\n".join(lines)
-    
     def _analyze_with_rag(
         self,
-        transcript: TranscriptOutput,
-        full_text: str
+        transcript: TranscriptOutput
     ) -> str:
-        """Analisa usando RAG (para transcrições longas)."""
+        """Analisa usando RAG (sempre usado, não importa o tamanho da transcrição)."""
         self.logger.info("Usando RAG para análise contextual")
         
         episode_id = transcript.episode_metadata.episode_id
@@ -338,28 +401,6 @@ Sumário Executivo:"""
         if hasattr(result, 'content'):
             return result.content
         return str(result)
-    
-    def _analyze_direct(
-        self,
-        transcript: TranscriptOutput,
-        full_text: str
-    ) -> str:
-        """Análise direta sem RAG (para transcrições curtas)."""
-        self.logger.info("Análise direta (sem RAG)")
-        
-        participants_str = ", ".join([
-            f"{p.name} ({p.role})" for p in transcript.episode_metadata.participants
-        ])
-        
-        prompt = self.ANALYSIS_PROMPT.format(
-            title=transcript.episode_metadata.title,
-            participants=participants_str,
-            duration=transcript.episode_metadata.duration_seconds,
-            context=full_text[:12000]  # Limitar para não estourar tokens
-        )
-        
-        result = self.llm.predict(prompt)
-        return result
     
     def query_episode_in_pinecone(
         self,
